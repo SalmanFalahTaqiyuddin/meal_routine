@@ -79,7 +79,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             children: [
               const Spacer(flex: 3),
               Text(
-                'Bergabung dengan\nMealRoutine',
+                'Malikah',
                 style: theme.textTheme.displayMedium,
               ),
               const SizedBox(height: 36),
