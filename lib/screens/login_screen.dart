@@ -96,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Spacer(flex: 3),
-              Text('Malikah', style: theme.textTheme.displayLarge),
+              Text('Login', style: theme.textTheme.displayLarge),
               const SizedBox(height: 36),
               TextField(
                 controller: _emailCtrl,
