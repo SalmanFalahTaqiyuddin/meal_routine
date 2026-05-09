@@ -2,13 +2,16 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../models/meal_model.dart';
+import '../providers/schedule_provider.dart';
 import '../services/meal_service.dart';
 import '../services/storage_service.dart';
 import 'add_meal_sheet.dart';
 import 'meal_detail_screen.dart';
+import 'package:provider/provider.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onGoToOverview;
+  const HomeScreen({super.key, this.onGoToOverview});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -115,6 +118,10 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       final streak = await StorageService.calculateStreak();
       setState(() => _streak = streak);
+      if (mounted) {
+    context.read<ScheduleProvider>().loadSchedules();
+  }
+      widget.onGoToOverview?.call();
     }
   }
 
@@ -128,6 +135,10 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     final streak = await StorageService.calculateStreak();
     setState(() => _streak = streak);
+
+    if (mounted) {
+    context.read<ScheduleProvider>().loadSchedules();
+  }
   }
 
   @override
