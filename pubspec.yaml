@@ -38,6 +38,7 @@ dependencies:
   audioplayers: ^6.6.0
   another_flushbar: ^1.12.32
   image_picker: ^1.2.2
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:
@@ -62,7 +63,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/sounds/
+    - assets/data/
 
   fonts:
     - family: SF Pro
