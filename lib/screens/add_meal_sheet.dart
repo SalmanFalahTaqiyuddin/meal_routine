@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../models/meal_model.dart';
@@ -8,8 +9,13 @@ import 'create_recipe_screen.dart';
 
 class AddMealSheet extends StatefulWidget {
   final String mealType;
+  final String dateKey;
 
-  const AddMealSheet({super.key, required this.mealType});
+  const AddMealSheet({
+    super.key,
+    required this.mealType,
+    required this.dateKey,
+  });
 
   @override
   State<AddMealSheet> createState() => _AddMealSheetState();
@@ -41,13 +47,11 @@ class _AddMealSheetState extends State<AddMealSheet> {
       .where((r) => r.name.toLowerCase().contains(_search.toLowerCase()))
       .toList();
 
-  void _toggleSelect(Recipe recipe) {
+  void _toggleSelect(Recipe r) {
     setState(() {
-      if (_selected.any((r) => r.id == recipe.id)) {
-        _selected.removeWhere((r) => r.id == recipe.id);
-      } else {
-        _selected.add(recipe);
-      }
+      _selected.any((s) => s.id == r.id)
+          ? _selected.removeWhere((s) => s.id == r.id)
+          : _selected.add(r);
     });
   }
 
@@ -55,44 +59,67 @@ class _AddMealSheetState extends State<AddMealSheet> {
     if (_selected.isEmpty) return;
     setState(() => _saving = true);
 
-    // Kirim ke API Mockoon
-    for (final r in _selected) {
-      await MealService.addMeal(
+    final addedMeals = <Meal>[];
+
+    for (int i = 0; i < _selected.length; i++) {
+      final r = _selected[i];
+      final meal = Meal(
+        id: DateTime.now().millisecondsSinceEpoch + i,
+        recipeId: r.id, // ✅ simpan id resep asal
         name: r.name,
         duration: r.duration,
         image: r.image,
         mealType: widget.mealType,
         ingredients: r.ingredients,
+        steps: r.steps, // ✅ simpan steps
       );
-    }
 
-    // Buat list Meal dari resep yang dipilih
-    final addedMeals = _selected.asMap().entries.map((e) {
-      return Meal(
-        id: DateTime.now().millisecondsSinceEpoch + e.key,
-        name: e.value.name,
-        duration: e.value.duration,
-        image: e.value.image,
-        mealType: widget.mealType,
-        ingredients: e.value.ingredients,
+      await MealService.addMeal(
+        name: meal.name,
+        duration: meal.duration,
+        image: meal.image,
+        mealType: meal.mealType,
+        dateKey: widget.dateKey,
+        ingredients: meal.ingredients,
+        steps: meal.steps,
+        recipeId: meal.recipeId,
       );
-    }).toList();
+
+      addedMeals.add(meal);
+    }
 
     setState(() => _saving = false);
-
-    if (mounted) {
-      // ✅ Return data meal ke home screen
-      Navigator.pop(context, addedMeals);
-    }
+    if (mounted) Navigator.pop(context, addedMeals);
   }
 
   void _goToCreateRecipe() async {
-    await Navigator.push(
+    final newRecipe = await Navigator.push<Recipe>(
       context,
       MaterialPageRoute(builder: (_) => const CreateRecipeScreen()),
     );
-    // Reload resep setelah buat resep baru
-    _loadRecipes();
+    if (newRecipe != null) {
+      setState(() => _recipes = [..._recipes, newRecipe]);
+    }
+  }
+
+  Widget _buildRecipeImage(String image) {
+    if (image.isEmpty) return _placeholder();
+    if (image.startsWith('http')) {
+      return Image.network(
+        image,
+        width: 50,
+        height: 50,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _placeholder(),
+      );
+    }
+    return Image.file(
+      File(image),
+      width: 50,
+      height: 50,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => _placeholder(),
+    );
   }
 
   @override
@@ -106,8 +133,6 @@ class _AddMealSheetState extends State<AddMealSheet> {
       child: Column(
         children: [
           const SizedBox(height: 8),
-
-          // Handle bar
           Container(
             width: 40,
             height: 4,
@@ -117,8 +142,6 @@ class _AddMealSheetState extends State<AddMealSheet> {
             ),
           ),
           const SizedBox(height: 16),
-
-          // Judul
           Text(
             'Add ${widget.mealType}',
             style: const TextStyle(
@@ -145,7 +168,7 @@ class _AddMealSheetState extends State<AddMealSheet> {
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(50),
-                  borderSide: BorderSide(color: AppTheme.borderColor),
+                  borderSide: const BorderSide(color: AppTheme.borderColor),
                 ),
               ),
             ),
@@ -209,8 +232,7 @@ class _AddMealSheetState extends State<AddMealSheet> {
                     itemCount: _filtered.length,
                     itemBuilder: (_, i) {
                       final r = _filtered[i];
-                      final isSelected = _selected.any((s) => s.id == r.id);
-
+                      final isSel = _selected.any((s) => s.id == r.id);
                       return GestureDetector(
                         onTap: () => _toggleSelect(r),
                         child: AnimatedContainer(
@@ -218,36 +240,24 @@ class _AddMealSheetState extends State<AddMealSheet> {
                           margin: const EdgeInsets.only(bottom: 10),
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: isSelected
+                            color: isSel
                                 ? AppTheme.primaryGreen.withOpacity(0.05)
                                 : Colors.white,
                             border: Border.all(
-                              color: isSelected
+                              color: isSel
                                   ? AppTheme.primaryGreen
                                   : AppTheme.borderColor,
-                              width: isSelected ? 1.5 : 1,
+                              width: isSel ? 1.5 : 1,
                             ),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Row(
                             children: [
-                              // Gambar
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: r.image.isNotEmpty
-                                    ? Image.network(
-                                        r.image,
-                                        width: 50,
-                                        height: 50,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) =>
-                                            _placeholder(),
-                                      )
-                                    : _placeholder(),
+                                child: _buildRecipeImage(r.image),
                               ),
                               const SizedBox(width: 12),
-
-                              // Info
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -269,8 +279,6 @@ class _AddMealSheetState extends State<AddMealSheet> {
                                   ],
                                 ),
                               ),
-
-                              // Checkbox
                               AnimatedContainer(
                                 duration: const Duration(milliseconds: 200),
                                 width: 22,
@@ -280,11 +288,11 @@ class _AddMealSheetState extends State<AddMealSheet> {
                                   border: Border.all(
                                     color: AppTheme.primaryGreen,
                                   ),
-                                  color: isSelected
+                                  color: isSel
                                       ? AppTheme.primaryGreen
                                       : Colors.transparent,
                                 ),
-                                child: isSelected
+                                child: isSel
                                     ? const Icon(
                                         Icons.check,
                                         size: 14,

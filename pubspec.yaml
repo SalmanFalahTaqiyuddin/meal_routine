@@ -63,7 +63,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/data/
+    - assets/
 
   fonts:
     - family: SF Pro
