@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'config/app_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
-import 'screens/overview_screen.dart';
+import 'screens/overview_daily_meals.dart';
 import 'screens/profile_screen.dart';
 import 'widgets/bottom_nav.dart';
 

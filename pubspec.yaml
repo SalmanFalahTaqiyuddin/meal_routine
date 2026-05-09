@@ -39,6 +39,12 @@ dependencies:
   another_flushbar: ^1.12.32
   image_picker: ^1.2.2
   shared_preferences: ^2.5.5
+  sqflite_common_ffi: 2.3.6
+  sqflite: ^2.3.0
+  path_provider: ^2.1.1
+  path: ^1.9.1
+  badges: ^3.2.0
+  provider: ^6.1.5+1
 
 dev_dependencies:
   flutter_test:
@@ -63,7 +69,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/data/
+    - assets/
 
   fonts:
     - family: SF Pro
