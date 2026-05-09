@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:another_flushbar/flushbar.dart';
 import 'package:nyobaapihehe/main.dart';
 import '../services/auth_service.dart';
+import '../services/storage_service.dart'; // ✅ tambah import ini
 import 'register_screen.dart';
 import 'home_screen.dart';
 
@@ -60,13 +61,16 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _loading = false);
 
     if (result['success'] == true) {
-      // Sukses — langsung pindah, tidak perlu notif
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainScreen()),
-      );
+      // ✅ Simpan email ke storage agar muncul di ProfileScreen
+      await StorageService.saveEmail(_emailCtrl.text.trim());
+
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const MainScreen()),
+        );
+      }
     } else {
-      // Gagal — tampilkan error
       _showErrorFlushbar(result['message']);
     }
   }

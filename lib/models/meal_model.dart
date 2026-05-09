@@ -1,40 +1,43 @@
 class Meal {
   final int id;
+  final int? recipeId; // ✅ TAMBAH: id resep asal
   final String name;
   final String image;
   final String duration;
   final String mealType;
   final List<String> ingredients;
+  final List<String> steps;
 
   Meal({
     required this.id,
+    this.recipeId,
     required this.name,
     required this.image,
     required this.duration,
     required this.mealType,
-    this.ingredients = const [],
+    required this.ingredients,
+    this.steps = const [],
   });
 
-  static String _capitalize(String s) {
-    if (s.isEmpty) return s;
-    return s[0].toUpperCase() + s.substring(1).toLowerCase();
-  }
-
   factory Meal.fromJson(Map<String, dynamic> json) => Meal(
-    id: json['id'],
-    name: json['name'],
-    image: json['image'] ?? '',
-    duration: json['duration'],
-    mealType: _capitalize(json['meal_type'] ?? ''),
+    id: json['id'] as int? ?? 0,
+    recipeId: json['recipe_id'] as int?,
+    name: json['name'] as String,
+    image: json['image'] as String? ?? '',
+    duration: json['duration'] as String,
+    mealType: json['meal_type'] as String? ?? '',
     ingredients: List<String>.from(json['ingredients'] ?? []),
+    steps: List<String>.from(json['steps'] ?? []),
   );
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    if (recipeId != null) 'recipe_id': recipeId,
     'name': name,
     'image': image,
     'duration': duration,
     'meal_type': mealType,
     'ingredients': ingredients,
+    'steps': steps,
   };
 }

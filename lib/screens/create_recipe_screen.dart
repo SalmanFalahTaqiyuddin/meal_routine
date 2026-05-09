@@ -19,7 +19,6 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
     TextEditingController(),
   ];
   final List<TextEditingController> _stepCtrls = [TextEditingController()];
-
   File? _imageFile;
   bool _loading = false;
 
@@ -44,7 +43,7 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
     setState(() => _loading = true);
 
     final recipe = Recipe(
-      id: 0,
+      id: DateTime.now().millisecondsSinceEpoch,
       name: _nameCtrl.text.trim(),
       image: _imageFile?.path ?? '',
       duration: _durationCtrl.text.trim(),
@@ -59,14 +58,16 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
       isCustom: true,
     );
 
-    final ok = await RecipeService.createRecipe(recipe);
+    // ✅ Simpan ke local storage → otomatis tampil di profile
+    await RecipeService.createRecipe(recipe);
     setState(() => _loading = false);
 
-    if (ok && mounted) {
+    if (mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Resep berhasil disimpan!')));
-      Navigator.pop(context);
+      // ✅ Return recipe ke AddMealSheet → langsung muncul di list
+      Navigator.pop(context, recipe);
     }
   }
 
@@ -166,7 +167,6 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
             ),
           ),
           const SizedBox(height: 16),
-
           TextField(
             controller: _nameCtrl,
             decoration: const InputDecoration(hintText: 'Nama makanan'),

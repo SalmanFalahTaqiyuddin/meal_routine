@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../models/meal_model.dart';
 import '../services/meal_service.dart';
+import '../services/storage_service.dart';
 import 'add_meal_sheet.dart';
 import 'meal_detail_screen.dart';
 
@@ -16,36 +18,55 @@ class _HomeScreenState extends State<HomeScreen> {
   String _selectedType = 'Breakfast';
   DateTime _selectedDate = DateTime.now();
 
-  // Key: "yyyy-MM-dd|MealType" → List<Meal>
-  final Map<String, List<Meal>> _mealStore = {};
-
+  Map<String, List<Meal>> _mealStore = {};
+  Set<String> _mealKeys = {};
   bool _loading = true;
+  int _streak = 0;
+
+  // ✅ Avatar & nama dari storage — sinkron dengan ProfileScreen
+  File? _avatarFile;
+  String _name = 'User';
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadFromStorage();
   }
 
-  String _dateKey(DateTime date, String type) {
-    final d =
-        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-    return '$d|$type';
-  }
-
-  Future<void> _load() async {
+  Future<void> _loadFromStorage() async {
     setState(() => _loading = true);
-    final meals = await MealService.getMeals();
-    final today = DateTime.now();
-    for (final meal in meals) {
-      final k = _dateKey(today, meal.mealType);
-      _mealStore[k] = [...(_mealStore[k] ?? []), meal];
+
+    final stored = await StorageService.loadMeals();
+    final mealStore = stored.map(
+      (k, v) => MapEntry(k, v.map((e) => Meal.fromJson(e)).toList()),
+    );
+    final streak = await StorageService.calculateStreak();
+
+    // ✅ Baca profile (nama + avatarPath) dari storage
+    final profile = await StorageService.loadProfile();
+    final avatarPath = profile['avatarPath'] as String?;
+    File? avatarFile;
+    if (avatarPath != null && avatarPath.isNotEmpty) {
+      final f = File(avatarPath);
+      avatarFile = f.existsSync() ? f : null;
     }
-    setState(() => _loading = false);
+
+    setState(() {
+      _mealStore = mealStore;
+      _mealKeys = mealStore.keys.toSet();
+      _streak = streak;
+      _name = profile['name'] ?? 'User';
+      _avatarFile = avatarFile;
+      _loading = false;
+    });
   }
 
-  List<Meal> get _filtered =>
-      _mealStore[_dateKey(_selectedDate, _selectedType)] ?? [];
+  String _dateKey(DateTime date, String type) =>
+      StorageService.dateKey(date, type);
+
+  String get _currentKey => _dateKey(_selectedDate, _selectedType);
+
+  List<Meal> get _filtered => _mealStore[_currentKey] ?? [];
 
   List<String> get _allIngredients {
     final list = <String>[];
@@ -68,31 +89,45 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
+  bool _hasAnyMeal(DateTime date) {
+    return ['Breakfast', 'Lunch', 'Dinner'].any((t) {
+      final k = _dateKey(date, t);
+      return (_mealStore[k]?.isNotEmpty ?? false);
+    });
+  }
+
   void _openAddMeal() async {
-    // ✅ Pass selectedType supaya sheet tahu mau masuk tab mana
     final added = await showModalBottomSheet<List<Meal>>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => AddMealSheet(mealType: _selectedType),
+      builder: (_) =>
+          AddMealSheet(mealType: _selectedType, dateKey: _currentKey),
     );
 
     if (added != null && added.isNotEmpty) {
-      final k = _dateKey(_selectedDate, _selectedType);
       setState(() {
-        _mealStore[k] = [...(_mealStore[k] ?? []), ...added];
+        _mealStore[_currentKey] = [
+          ...(_mealStore[_currentKey] ?? []),
+          ...added,
+        ];
+        _mealKeys.add(_currentKey);
       });
+      final streak = await StorageService.calculateStreak();
+      setState(() => _streak = streak);
     }
   }
 
   void _deleteMeal(Meal meal) async {
-    final ok = await MealService.deleteMeal(meal.id);
-    if (ok) {
-      final k = _dateKey(_selectedDate, _selectedType);
-      setState(() {
-        _mealStore[k]?.removeWhere((m) => m.id == meal.id);
-      });
-    }
+    await MealService.deleteMeal(_currentKey, meal.id);
+    setState(() {
+      _mealStore[_currentKey]?.removeWhere((m) => m.id == meal.id);
+      if (_mealStore[_currentKey]?.isEmpty ?? false) {
+        _mealKeys.remove(_currentKey);
+      }
+    });
+    final streak = await StorageService.calculateStreak();
+    setState(() => _streak = streak);
   }
 
   @override
@@ -103,7 +138,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : RefreshIndicator(
-                onRefresh: _load,
+                onRefresh: _loadFromStorage,
                 child: ListView(
                   padding: const EdgeInsets.all(20),
                   children: [
@@ -140,14 +175,14 @@ class _HomeScreenState extends State<HomeScreen> {
               BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8),
             ],
           ),
-          child: const Row(
+          child: Row(
             children: [
-              Text('🔥', style: TextStyle(fontSize: 20)),
-              SizedBox(width: 8),
+              const Text('🔥', style: TextStyle(fontSize: 20)),
+              const SizedBox(width: 8),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     'Current Streak',
                     style: TextStyle(
                       fontSize: 11,
@@ -155,18 +190,33 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   Text(
-                    '7 days',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                    '$_streak ${_streak == 1 ? 'day' : 'days'}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ),
             ],
           ),
         ),
-        CircleAvatar(
-          radius: 22,
-          backgroundColor: AppTheme.borderColor,
-          child: const Icon(Icons.person, color: AppTheme.textSecondary),
+
+        // ✅ Avatar sinkron dengan ProfileScreen — baca dari storage
+        GestureDetector(
+          onTap: () {
+            // Pull-to-refresh sudah handle sync, tapi bisa juga navigasi ke profile
+          },
+          child: CircleAvatar(
+            radius: 22,
+            backgroundColor: AppTheme.borderColor,
+            backgroundImage: _avatarFile != null
+                ? FileImage(_avatarFile!)
+                : null,
+            child: _avatarFile == null
+                ? const Icon(Icons.person, color: AppTheme.textSecondary)
+                : null,
+          ),
         ),
       ],
     );
@@ -178,11 +228,7 @@ class _HomeScreenState extends State<HomeScreen> {
       children: _weekDays.map((date) {
         final isSelected = _isSameDay(date, _selectedDate);
         final isToday = _isSameDay(date, DateTime.now());
-        final hasMeal = [
-          'Breakfast',
-          'Lunch',
-          'Dinner',
-        ].any((t) => (_mealStore[_dateKey(date, t)] ?? []).isNotEmpty);
+        final hasMeal = _hasAnyMeal(date);
 
         return GestureDetector(
           onTap: () => setState(() => _selectedDate = date),
@@ -383,15 +429,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: meal.image.isNotEmpty
-                  ? Image.network(
-                      meal.image,
-                      width: 54,
-                      height: 54,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _imagePlaceholder(),
-                    )
-                  : _imagePlaceholder(),
+              child: _buildMealImage(meal.image),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -426,6 +464,26 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMealImage(String image) {
+    if (image.isEmpty) return _imagePlaceholder();
+    if (image.startsWith('http')) {
+      return Image.network(
+        image,
+        width: 54,
+        height: 54,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _imagePlaceholder(),
+      );
+    }
+    return Image.file(
+      File(image),
+      width: 54,
+      height: 54,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => _imagePlaceholder(),
     );
   }
 

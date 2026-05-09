@@ -1,9 +1,13 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../config/app_theme.dart';
 import '../models/recipe_model.dart';
-import '../services/recipe_service.dart';
-import 'meal_detail_screen.dart';
 import '../models/meal_model.dart';
+import '../services/recipe_service.dart';
+import '../services/storage_service.dart';
+import 'meal_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -16,10 +20,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<Recipe> _myRecipes = [];
   bool _loading = true;
 
-  // Simulasi stats — nanti bisa disambung ke API
-  final int _variasi = 18;
-  final int _streak = 5;
-  final int _terjadwal = 7;
+  String _name = 'User';
+  String _email = ''; // ← bukan hardcoded lagi, diisi dari storage
+  File? _avatarFile;
+
+  int get _variasi => _myRecipes.length;
+  int _streak = 0;
+  int _terjadwal = 0;
 
   @override
   void initState() {
@@ -28,13 +35,229 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _load() async {
+    setState(() => _loading = true);
+
     final recipes = await RecipeService.getMyRecipes();
+    final profile = await StorageService.loadProfile();
+    final meals = await StorageService.loadMeals();
+
+    // Hitung _terjadwal: hari unik yang punya minimal 1 meal terjadwal
+    final scheduledDates = meals.entries
+        .where((e) => e.value.isNotEmpty)
+        .map((e) => e.key.split('|')[0])
+        .toSet();
+
+    // Hitung _streak: hari berturut-turut mundur dari hari ini
+    final today = DateTime.now();
+    int streak = 0;
+    for (int i = 0; i < 365; i++) {
+      final day = today.subtract(Duration(days: i));
+      final key = _formatDate(day);
+      final hasMeal = meals.entries.any(
+        (e) => e.key.startsWith(key) && e.value.isNotEmpty,
+      );
+      if (hasMeal) {
+        streak++;
+      } else {
+        if (i > 0) break;
+      }
+    }
+
     setState(() {
       _myRecipes = recipes;
+      _name = profile['name'] ?? 'User';
+      _email = profile['email'] ?? '';
+      // ✅ Baca avatarPath dari storage agar sinkron lintas screen
+      final avatarPath = profile['avatarPath'] as String?;
+      if (avatarPath != null && avatarPath.isNotEmpty) {
+        final f = File(avatarPath);
+        _avatarFile = f.existsSync() ? f : null;
+      } else {
+        _avatarFile = null;
+      }
+      _terjadwal = scheduledDates.length;
+      _streak = streak;
       _loading = false;
     });
   }
 
+  String _formatDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  void _editName() {
+    final ctrl = TextEditingController(text: _name);
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Edit Profil',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Nama',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(hintText: 'Masukkan nama'),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Email',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(50),
+                border: Border.all(color: AppTheme.borderColor),
+              ),
+              child: Text(
+                _email,
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              '* Email tidak dapat diubah',
+              style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newName = ctrl.text.trim();
+              if (newName.isNotEmpty) {
+                // ✅ Merge — hanya update name, email & avatarPath tetap
+                await StorageService.saveProfile({'name': newName});
+                setState(() => _name = newName);
+              }
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _editAvatar() {
+    final bool supportCamera =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              decoration: BoxDecoration(
+                color: AppTheme.borderColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.photo_library_outlined,
+                color: AppTheme.primaryGreen,
+              ),
+              title: const Text('Pilih dari Galeri'),
+              onTap: () async {
+                Navigator.pop(context);
+                final picker = ImagePicker();
+                final picked = await picker.pickImage(
+                  source: ImageSource.gallery,
+                  imageQuality: 80,
+                );
+                if (picked != null && mounted) {
+                  // ✅ Persist path ke storage agar sinkron dengan HomeScreen
+                  await StorageService.saveAvatarPath(picked.path);
+                  setState(() => _avatarFile = File(picked.path));
+                }
+              },
+            ),
+            if (supportCamera)
+              ListTile(
+                leading: const Icon(
+                  Icons.camera_alt_outlined,
+                  color: AppTheme.primaryGreen,
+                ),
+                title: const Text('Ambil Foto'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final picker = ImagePicker();
+                  final picked = await picker.pickImage(
+                    source: ImageSource.camera,
+                    imageQuality: 80,
+                  );
+                  if (picked != null && mounted) {
+                    // ✅ Persist path ke storage
+                    await StorageService.saveAvatarPath(picked.path);
+                    setState(() => _avatarFile = File(picked.path));
+                  }
+                },
+              ),
+            if (_avatarFile != null)
+              ListTile(
+                leading: const Icon(
+                  Icons.delete_outline,
+                  color: Colors.redAccent,
+                ),
+                title: const Text(
+                  'Hapus Foto',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  // ✅ Hapus path dari storage juga
+                  StorageService.saveAvatarPath(null);
+                  setState(() => _avatarFile = null);
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// ✅ FIX: Hapus guard `if (recipe.id == null) return` yang memblokir delete.
+  /// Pakai ID jika ada, fallback ke delete-by-name untuk resep lama
+  /// yang disimpan sebelum fix auto-generate ID diterapkan.
   void _deleteRecipe(Recipe recipe) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -55,10 +278,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
 
-    if (confirm == true) {
-      final ok = await RecipeService.deleteRecipe(recipe.id);
-      if (ok) _load();
+    if (confirm != true) return;
+
+    if (recipe.id != null) {
+      // Resep baru — punya ID, hapus by ID
+      await RecipeService.deleteRecipe(recipe.id!);
+    } else {
+      // Resep lama (disimpan sebelum fix) — fallback hapus by name
+      await StorageService.removeCustomRecipeByName(recipe.name);
     }
+
+    if (mounted) _load();
   }
 
   @override
@@ -76,7 +306,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     vertical: 20,
                   ),
                   children: [
-                    // Judul
                     const Center(
                       child: Text(
                         'Profile',
@@ -88,16 +317,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-
-                    // Avatar + nama + email
                     _buildProfileHeader(),
                     const SizedBox(height: 28),
-
-                    // Stats: variasi, streak, terjadwal
                     _buildStats(),
                     const SizedBox(height: 32),
-
-                    // My Recipes title
                     const Center(
                       child: Text(
                         'My Recipes',
@@ -109,11 +332,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-
-                    // Konten resep
                     _myRecipes.isEmpty
                         ? _buildEmptyRecipes()
                         : _buildRecipeList(),
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
@@ -124,56 +346,82 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildProfileHeader() {
     return Column(
       children: [
-        Stack(
-          children: [
-            Container(
-              width: 90,
-              height: 90,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFFEEEEEE),
-                border: Border.all(color: Colors.white, width: 3),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 12,
-                  ),
-                ],
+        GestureDetector(
+          onTap: _editAvatar,
+          child: Stack(
+            children: [
+              Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFEEEEEE),
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 12,
+                    ),
+                  ],
+                ),
+                child: ClipOval(
+                  child: _avatarFile != null
+                      ? Image.file(
+                          _avatarFile!,
+                          fit: BoxFit.cover,
+                          width: 90,
+                          height: 90,
+                        )
+                      : const Icon(
+                          Icons.person_rounded,
+                          size: 50,
+                          color: AppTheme.textSecondary,
+                        ),
+                ),
               ),
-              child: const Icon(
-                Icons.person_rounded,
-                size: 50,
-                color: AppTheme.textSecondary,
+              Positioned(
+                bottom: 2,
+                right: 2,
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.primaryGreen,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.edit, size: 14, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _name,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.primaryGreen,
               ),
             ),
-            Positioned(
-              bottom: 2,
-              right: 2,
-              child: Container(
-                width: 26,
-                height: 26,
-                decoration: const BoxDecoration(
-                  color: AppTheme.primaryGreen,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.edit, size: 14, color: Colors.white),
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: _editName,
+              child: const Icon(
+                Icons.edit,
+                size: 16,
+                color: AppTheme.primaryGreen,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        const Text(
-          'Salman Falah',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.primaryGreen,
-          ),
-        ),
         const SizedBox(height: 4),
-        const Text(
-          'salman@gmail.com',
-          style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+        Text(
+          _email,
+          style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
         ),
       ],
     );
@@ -257,9 +505,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildRecipeCard(Recipe recipe) {
     return GestureDetector(
       onTap: () {
-        // Buka detail resep
         final meal = Meal(
-          id: recipe.id,
+          id: recipe.id ?? 0,
           name: recipe.name,
           image: recipe.image,
           duration: recipe.duration,
@@ -281,30 +528,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         child: Row(
           children: [
-            // Gambar
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: recipe.image.isNotEmpty
-                  ? (recipe.image.startsWith('http')
-                        ? Image.network(
-                            recipe.image,
-                            width: 54,
-                            height: 54,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _placeholder(),
-                          )
-                        : Image.asset(
-                            recipe.image,
-                            width: 54,
-                            height: 54,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _placeholder(),
-                          ))
-                  : _placeholder(),
+              child: _buildRecipeImage(recipe.image),
             ),
             const SizedBox(width: 12),
-
-            // Info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -326,8 +554,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ],
               ),
             ),
-
-            // Tombol hapus
             IconButton(
               icon: const Icon(
                 Icons.delete_outline,
@@ -339,6 +565,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildRecipeImage(String image) {
+    if (image.isEmpty) return _placeholder();
+    if (image.startsWith('http')) {
+      return Image.network(
+        image,
+        width: 54,
+        height: 54,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _placeholder(),
+      );
+    }
+    return Image.file(
+      File(image),
+      width: 54,
+      height: 54,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => _placeholder(),
     );
   }
 
