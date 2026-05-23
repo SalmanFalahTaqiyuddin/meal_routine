@@ -22,46 +22,58 @@ class ScheduleProvider extends ChangeNotifier {
   };
 
   Future<void> loadSchedules() async {
-    _isLoading = true;
-    notifyListeners();
+  _isLoading = true;
+  notifyListeners();
 
-    final raw = await StorageService.loadMeals();
+  final raw = await StorageService.loadMeals();
 
-    // Reset struktur
-    final Map<String, Map<String, List<Meal>>> result = {
-      for (final day in days)
-        day: { for (final type in mealTypes) type: [] }
-    };
+  final Map<String, Map<String, List<Meal>>> result = {
+    for (final day in days)
+      day: {for (final type in mealTypes) type: []}
+  };
 
-    for (final entry in raw.entries) {
-      // Format key dari HomeScreen: '2025-01-19|Breakfast'
-      final parts = entry.key.split('|');
-      if (parts.length != 2) continue;
+  // ✅ Hitung range minggu ini (Senin s/d Minggu)
+  final now = DateTime.now();
+  final startOfWeek = now.subtract(Duration(days: now.weekday - 1)); // Senin
+  final endOfWeek = startOfWeek.add(const Duration(days: 6));        // Minggu
 
-      final dateStr = parts[0];
-      final mealType = parts[1];
-      if (!mealTypes.contains(mealType)) continue;
+  for (final entry in raw.entries) {
+    final parts = entry.key.split('|');
+    if (parts.length != 2) continue;
 
-      final dateParts = dateStr.split('-');
-      if (dateParts.length != 3) continue;
+    final dateStr = parts[0];
+    final mealType = parts[1];
+    if (!mealTypes.contains(mealType)) continue;
 
-      final date = DateTime(
-        int.parse(dateParts[0]),
-        int.parse(dateParts[1]),
-        int.parse(dateParts[2]),
-      );
+    final dateParts = dateStr.split('-');
+    if (dateParts.length != 3) continue;
 
-      final dayName = _weekdayToDay[date.weekday];
-      if (dayName == null) continue;
+    final date = DateTime(
+      int.parse(dateParts[0]),
+      int.parse(dateParts[1]),
+      int.parse(dateParts[2]),
+    );
 
-      final meals = entry.value.map((m) => Meal.fromJson(m)).toList();
-      result[dayName]![mealType]!.addAll(meals);
-    }
+    // ✅ Skip kalau di luar minggu ini
+    final isThisWeek = !date.isBefore(
+          DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day),
+        ) &&
+        !date.isAfter(
+          DateTime(endOfWeek.year, endOfWeek.month, endOfWeek.day),
+        );
+    if (!isThisWeek) continue;
 
-    _schedules = result;
-    _isLoading = false;
-    notifyListeners();
+    final dayName = _weekdayToDay[date.weekday];
+    if (dayName == null) continue;
+
+    final meals = entry.value.map((m) => Meal.fromJson(m)).toList();
+    result[dayName]![mealType]!.addAll(meals);
   }
+
+  _schedules = result;
+  _isLoading = false;
+  notifyListeners();
+}
 
   List<Meal> getMeals(String day, String mealType) {
     return _schedules[day]?[mealType] ?? [];

@@ -43,6 +43,21 @@ class StorageService {
     return '$d|$type';
   }
 
+  /// Hapus data meal yang tanggalnya sudah lewat dari hari ini
+static Future<void> deleteOldMeals() async {
+  final store = await loadMeals();
+  final today = DateTime.now();
+  final todayStr =
+      '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+
+  store.removeWhere((key, _) {
+    final datePart = key.split('|')[0]; // '2025-01-19'
+    return datePart.compareTo(todayStr) < 0; // hapus kalau sebelum hari ini
+  });
+
+  await saveMeals(store);
+}
+
   // ─── PROFILE ─────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> loadProfile() async {
