@@ -119,9 +119,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final streak = await StorageService.calculateStreak();
       setState(() => _streak = streak);
       if (mounted) {
-    context.read<ScheduleProvider>().loadSchedules();
-  }
-      widget.onGoToOverview?.call();
+        context.read<ScheduleProvider>().loadSchedules();
+      }
     }
   }
 
@@ -137,8 +136,8 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _streak = streak);
 
     if (mounted) {
-    context.read<ScheduleProvider>().loadSchedules();
-  }
+      context.read<ScheduleProvider>().loadSchedules();
+    }
   }
 
   @override

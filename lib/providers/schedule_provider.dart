@@ -10,31 +10,41 @@ class ScheduleProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
 
   static const List<String> days = [
-    'Sunday', 'Monday', 'Tuesday', 'Wednesday',
-    'Thursday', 'Friday', 'Saturday',
+    'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
   ];
 
   static const List<String> mealTypes = ['Breakfast', 'Lunch', 'Dinner'];
 
   static const Map<int, String> _weekdayToDay = {
-    1: 'Monday', 2: 'Tuesday', 3: 'Wednesday',
-    4: 'Thursday',  5: 'Friday', 6: 'Saturday', 7: 'Sunday',
+    1: 'Monday',
+    2: 'Tuesday',
+    3: 'Wednesday',
+    4: 'Thursday',
+    5: 'Friday',
+    6: 'Saturday',
+    7: 'Sunday',
   };
 
   Future<void> loadSchedules() async {
     _isLoading = true;
-    notifyListeners();
+
+    // PERBAIKAN: Gunakan microtask agar tidak bentrok dengan proses build UI
+    Future.microtask(() => notifyListeners());
 
     final raw = await StorageService.loadMeals();
 
     // Reset struktur
     final Map<String, Map<String, List<Meal>>> result = {
-      for (final day in days)
-        day: { for (final type in mealTypes) type: [] }
+      for (final day in days) day: {for (final type in mealTypes) type: []},
     };
 
     for (final entry in raw.entries) {
-      // Format key dari HomeScreen: '2025-01-19|Breakfast'
       final parts = entry.key.split('|');
       if (parts.length != 2) continue;
 
